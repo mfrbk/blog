@@ -1,33 +1,60 @@
-name: Hexo Deploy
+# .github/workflows/deploy.yml
+name: Build and Deploy Blog
 
 on:
   push:
-    branches: [ main ]
+    branches: [ "main" ]  # 监听 main 分支的推送事件
+  workflow_dispatch:       # 支持手动触发
+
+# 全局安全设置，给予 Actions 部署 Pages 的最小必要权限
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 确保只有一个部署任务在运行，避免资源冲突
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
 
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v3
-        with:
-          ref: main
+      # 0. 信任 GitHub.com 的 SSH 主机密钥，这是安全部署的关键
+      - name: Add GitHub to known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
 
+      # 1. 拉取源代码仓库 (blog) 的代码
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      # ---> 这里是构建步骤，请根据你的博客框架进行修改
+      # 以下以最常见的 "Node.js 项目" 为例，假设它通过 npm run build 生成静态文件到 'public' 目录
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
+          cache: 'npm'
 
-      - name: Install Dependencies
-        run: npm install
+      - name: Install dependencies
+        run: npm ci
 
-      - name: Generate static files
-        run: npx hexo generate
+      - name: Build project
+        run: npm run build
+      # <--- 构建步骤结束
 
+      # 2. 使用 peaceiris/actions-gh-pages Action 完成跨仓库部署
       - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v3
+        uses: peaceiris/actions-gh-pages@v4
         with:
+          # 使用我们之前设置的 DEPLOY_KEY 进行鉴权
           deploy_key: ${{ secrets.DEPLOY_KEY }}
+          # 你的目标仓库：user/repo 格式
           external_repository: mfrbk/mfrbk.github.io
+          # 指定推送到目标仓库的哪个分支，一般主分支即可
           publish_branch: main
+          # 静态文件目录，请务必改成你项目生成的实际目录名
           publish_dir: ./public
